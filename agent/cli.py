@@ -10,26 +10,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from agent.detect.rules import mask, scan_text
-
-SCANNABLE = {".txt"}            # Phase 2 will add .pdf, .docx, .xlsx ...
-MAX_FILE_BYTES = 10 * 1024 * 1024   # skip files over 10 MB (safety limit)
+from agent.extract import SUPPORTED, ExtractionError, extract_text
 
 
 def walk(root: Path):
     """Yield every scannable file under root."""
     for path in sorted(root.rglob("*")):
-        if path.is_file() and path.suffix.lower() in SCANNABLE:
+        if path.is_file() and path.suffix.lower() in SUPPORTED:
             yield path
 
 
 def scan_file(path: Path) -> dict:
     """Scan one file. Returns counts + masked samples, never raw values."""
-    if path.stat().st_size > MAX_FILE_BYTES:
-        return {"file": str(path), "skipped": "too large"}
     try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-    except OSError as e:
-        return {"file": str(path), "skipped": f"read error: {e.__class__.__name__}"}
+        text = extract_text(path)
+    except ExtractionError as e:
+        return {"file": str(path), "skipped": str(e)}
 
     found = scan_text(text)
     return {
@@ -43,6 +39,8 @@ def scan_folder(root: Path) -> dict:
     files = [scan_file(p) for p in walk(root)]
     totals: dict[str, int] = {}
     for f in files:
+        if "skipped" in f:
+            print(f"  skipped {f['file']}: {f['skipped']}")
         for kind, n in f.get("counts", {}).items():
             totals[kind] = totals.get(kind, 0) + n
     return {

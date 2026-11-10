@@ -77,3 +77,27 @@ def test_scan_text_kyc_form():
     assert result["PAN"] == ["ABCPE1234F"]
     assert result["MOBILE"] == ["9876543210"]
     assert result["EMAIL"] == ["priya@example.in"]
+
+
+# ---------- OCR repair (Phase 2) ----------
+def test_pan_ocr_letter_o_read_as_zero():
+    assert find_pan("PAN Card: VHJPJO529R") == ["VHJPJ0529R"]
+
+def test_pan_ocr_several_mistakes():
+    assert find_pan("PAN: ABCPEI2S4F") == ["ABCPE1254F"]
+
+def test_pan_ocr_does_not_touch_letters_part():
+    # letters in positions 1-5 and 10 must stay as they are
+    assert find_pan("PAN: OBCPE1234O") == ["OBCPE1234O"]
+
+def test_pan_still_rejects_wrong_holder_type():
+    assert find_pan("code ABCZEO234F") == []
+
+def test_pan_ocr_last_letter_read_as_digit():
+    assert find_pan("PAN: ZCPPM45780") == ["ZCPPM4578O"]
+
+def test_pan_ocr_j_read_as_bracket():
+    assert find_pan("PAN Card: PFXPR3246]") == ["PFXPR3246J"]
+
+def test_ten_digit_number_is_not_a_pan():
+    assert find_pan("Phone 9876543210 and 1258012580") == []

@@ -18,9 +18,18 @@ def verhoeff_ok(num: str) -> bool:
 
 # ---------- Regex patterns ----------
 AADHAAR_RE = re.compile(r"(?<!\d)[2-9]\d{3} ?\d{4} ?\d{4}(?!\d)")
-PAN_RE     = re.compile(r"\b[A-Z]{3}[PCHFATBLJG][A-Z]\d{4}[A-Z]\b")
+# PAN: 3 letters + holder type + 1 letter + 4 digits + 1 letter (strict check)
+PAN_RE     = re.compile(r"[A-Z]{3}[PCHFATBLJG][A-Z]\d{4}[A-Z]")
+# Loose candidate: any 10 characters that MIGHT be a PAN damaged by OCR
+PAN_CANDIDATE_RE = re.compile(r"(?<![A-Za-z0-9])[A-Z0-9]{5}[0-9OIlSBZ]{4}[A-Z0-9\]](?![A-Za-z0-9])")
 MOBILE_RE  = re.compile(r"(?<!\d)(?:\+91[ -]?)?[6-9]\d{9}(?!\d)")
 EMAIL_RE   = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
+
+MAX_OCR_REPAIRS = 2
+
+# OCR look-alikes, both directions
+OCR_DIGIT_FIX  = str.maketrans({"O": "0", "I": "1", "l": "1", "S": "5", "B": "8", "Z": "2"})   # where a digit belongs
+OCR_LETTER_FIX = str.maketrans({"0": "O", "1": "I", "5": "S", "8": "B", "2": "Z", "]": "J"})   # where a letter belongs
 
 
 # ---------- Finder functions ----------
@@ -34,8 +43,26 @@ def find_aadhaar(text: str) -> list[str]:
     return results
 
 
+def fix_pan_ocr(candidate: str) -> str:
+    """Repair OCR look-alikes by position.
+    Letters belong in positions 1-5 and 10, digits in 6-9:
+    'VHJPJO529R' -> 'VHJPJ0529R',  'ZCPPM45780' -> 'ZCPPM4578O'."""
+    return (candidate[:5].translate(OCR_LETTER_FIX)
+            + candidate[5:9].translate(OCR_DIGIT_FIX)
+            + candidate[9].translate(OCR_LETTER_FIX))
+
+
 def find_pan(text: str) -> list[str]:
-    return PAN_RE.findall(text)
+    """Find loose candidates, repair OCR mistakes, then keep only strictly valid PANs."""
+    results = []
+    for candidate in PAN_CANDIDATE_RE.findall(text):
+        fixed = fix_pan_ocr(candidate)
+        repairs = sum(a != b for a, b in zip(candidate, fixed))
+        # OCR damages one or two characters, not half the number.
+        # More repairs than that = probably not a PAN at all (e.g. a phone number).
+        if repairs <= MAX_OCR_REPAIRS and PAN_RE.fullmatch(fixed):
+            results.append(fixed)
+    return results
 
 
 def find_mobile(text: str) -> list[str]:
